@@ -56,6 +56,9 @@ jobs:
           type=schedule,pattern={{date 'YYYYMMDD'}}
           type=raw,value=latest,enable={{is_default_branch}}
           type=sha,prefix={{branch}}-
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
 
     - name: Build and push bootc container
       id: build
