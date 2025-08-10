@@ -180,6 +180,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y podman
         
+        # Log in to GHCR for pulling our bootc container
+        echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+        
         # Pull bootc-image-builder container
         podman pull quay.io/centos-bootc/bootc-image-builder:latest
 
@@ -187,6 +190,10 @@ jobs:
       run: |
         # Test building a disk image from our bootc container
         IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}"
+        
+        # Pull the target bootc container image first (required for newer bootc-image-builder)
+        echo "Pulling target bootc container: $IMAGE_URL"
+        sudo podman pull "$IMAGE_URL"
         
         # Create a test build (raw disk image)
         mkdir -p output
