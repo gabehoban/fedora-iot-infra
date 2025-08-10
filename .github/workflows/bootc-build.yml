@@ -122,7 +122,7 @@ jobs:
       uses: actions/attest-build-provenance@v1
       with:
         subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        subject-digest: ${{ needs.build.outputs.digest }}
+        subject-digest: ${{ needs.build.outputs.image-digest }}
 
   verify-image:
     needs: [build, sign-image]
@@ -151,7 +151,7 @@ jobs:
           --type="slsaprovenance1" \
           --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-          "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+          "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}"
 
   test-bootc:
     needs: [build, sign-image]
@@ -171,7 +171,7 @@ jobs:
     - name: Test bootc image build
       run: |
         # Test building a disk image from our bootc container
-        IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+        IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}"
         
         # Create a test build (raw disk image)
         mkdir -p output
@@ -210,7 +210,7 @@ jobs:
         cat > RELEASE_NOTES.md << EOF
         # Fedora IoT GPS HAT Bootc Container
         
-        **Container Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}\`
+        **Container Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}\`
         
         ## Build Information
         - **Commit**: ${{ github.sha }}
@@ -222,7 +222,7 @@ jobs:
         ### Deploy to existing system:
         \`\`\`bash
         # Switch to this bootc container
-        sudo bootc switch ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        sudo bootc switch ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
         sudo systemctl reboot
         \`\`\`
         
@@ -234,7 +234,7 @@ jobs:
           -v ./output:/output \\
           quay.io/centos-bootc/bootc-image-builder:latest \\
           --type raw \\
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
         \`\`\`
         
         ## Verification
@@ -243,7 +243,7 @@ jobs:
         cosign verify \\
           --certificate-identity-regexp="https://github.com/${{ github.repository }}" \\
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
         \`\`\`
         EOF
 
