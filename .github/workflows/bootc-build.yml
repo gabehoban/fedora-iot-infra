@@ -200,8 +200,8 @@ jobs:
         # Log in to GHCR for pulling our bootc container
         echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
         
-        # Pull bootc-image-builder container
-        podman pull quay.io/centos-bootc/bootc-image-builder:latest
+        # Pull bootc-image-builder container (use sudo for consistency)
+        sudo podman pull quay.io/centos-bootc/bootc-image-builder:latest
 
     - name: Test bootc image build
       run: |
