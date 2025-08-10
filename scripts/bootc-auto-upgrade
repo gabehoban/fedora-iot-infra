@@ -1,0 +1,67 @@
+#!/bin/bash
+# Simple Bootc Auto-Upgrade Script
+set -euo pipefail
+
+LOG_TAG="bootc-auto-upgrade"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    logger -t "$LOG_TAG" "$*"
+}
+
+error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2
+    logger -t "$LOG_TAG" -p daemon.err "ERROR: $*"
+}
+
+# Schedule reboot for 3 AM if not already scheduled
+schedule_reboot() {
+    # Check if reboot is already scheduled
+    if systemctl list-timers --no-pager | grep -q "bootc-reboot"; then
+        log "Reboot already scheduled"
+        return 0
+    fi
+    
+    log "Scheduling reboot for 3 AM"
+    systemd-run --unit=bootc-reboot --on-calendar="*-*-* 03:00:00" --timer-property=AccuracySec=1min systemctl reboot
+}
+
+main() {
+    log "Checking for bootc updates..."
+    
+    # Check if bootc is available
+    if ! command -v bootc &>/dev/null; then
+        error "bootc command not found"
+        exit 1
+    fi
+    
+    # Check for updates
+    if bootc upgrade --check 2>&1 | grep -q "No update available"; then
+        log "No updates available"
+        exit 0
+    fi
+    
+    log "Updates available, starting upgrade..."
+    
+    # Perform upgrade
+    if bootc upgrade; then
+        log "Upgrade completed successfully"
+        
+        # Check if reboot is needed
+        if bootc status --json 2>/dev/null | grep -q '"staged"' || \
+           bootc status 2>/dev/null | grep -q "staged"; then
+            log "Scheduling reboot for 3 AM"
+            schedule_reboot
+        else
+            log "No reboot required"
+        fi
+    else
+        error "Upgrade failed"
+        exit 1
+    fi
+}
+
+# Handle interruption gracefully
+trap 'error "Interrupted"; exit 130' INT TERM
+
+main "$@"

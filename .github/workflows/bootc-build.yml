@@ -1,0 +1,260 @@
+name: Build Fedora IoT Bootc Container
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'Containerfile'
+      - '.github/workflows/bootc-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Containerfile'
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/fedora-iot-infra
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-url: ${{ steps.build.outputs.image-url }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=schedule,pattern={{date 'YYYYMMDD'}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix={{branch}}-
+
+    - name: Build and push bootc container
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        annotations: ${{ steps.meta.outputs.annotations }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run bootc container lint
+      run: |
+        # Pull the built image
+        IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        docker pull "$IMAGE_URL"
+        
+        # Run bootc lint to validate the container
+        docker run --rm "$IMAGE_URL" bootc container lint
+
+    - name: Generate build metadata
+      run: |
+        cat > build-metadata.json << EOF
+        {
+          "timestamp": "$(date -Iseconds)",
+          "commit": "${{ github.sha }}",
+          "ref": "${{ github.ref }}",
+          "workflow": "${{ github.workflow }}",
+          "run_id": "${{ github.run_id }}",
+          "image_digest": "${{ steps.build.outputs.digest }}",
+          "image_tags": ${{ steps.meta.outputs.json }}
+        }
+        EOF
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-metadata-${{ github.run_id }}
+        path: |
+          build-metadata.json
+          Containerfile
+        retention-days: 30
+
+  sign-image:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3
+
+    - name: Sign container image
+      run: |
+        # Sign all tags produced by the build
+        echo '${{ needs.build.outputs.tags }}' | jq -r '.[]' | while read -r tag; do
+          cosign sign --yes \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.ref }}" \
+            -a "commit=${{ github.sha }}" \
+            "$tag"
+        done
+
+    - name: Generate SLSA provenance
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        subject-digest: ${{ needs.build.outputs.digest }}
+
+  verify-image:
+    needs: [build, sign-image]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3
+
+    - name: Verify signatures
+      run: |
+        # Verify signatures on all tags
+        echo '${{ needs.build.outputs.tags }}' | jq -r '.[]' | while read -r tag; do
+          echo "Verifying signature for: $tag"
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$tag"
+        done
+
+    - name: Verify attestation
+      run: |
+        # Verify SLSA provenance
+        cosign verify-attestation \
+          --type="slsaprovenance1" \
+          --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+          --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+          "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+
+  test-bootc:
+    needs: [build, sign-image]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: Install bootc-image-builder
+      run: |
+        # Install podman and bootc-image-builder
+        sudo apt-get update
+        sudo apt-get install -y podman
+        
+        # Pull bootc-image-builder container
+        podman pull quay.io/centos-bootc/bootc-image-builder:latest
+
+    - name: Test bootc image build
+      run: |
+        # Test building a disk image from our bootc container
+        IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+        
+        # Create a test build (raw disk image)
+        mkdir -p output
+        sudo podman run --rm \
+          --privileged \
+          --pull=newer \
+          --security-opt label=type:unconfined_t \
+          -v $(pwd)/output:/output \
+          quay.io/centos-bootc/bootc-image-builder:latest \
+          --type raw \
+          "$IMAGE_URL"
+        
+        # Verify the image was created
+        ls -la output/
+        
+        # Clean up to save space
+        rm -rf output/*.raw
+
+  create-release:
+    needs: [build, sign-image, verify-image, test-bootc]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-metadata-${{ github.run_id }}
+        path: artifacts/
+
+    - name: Create release summary
+      run: |
+        cat > RELEASE_NOTES.md << EOF
+        # Fedora IoT GPS HAT Bootc Container
+        
+        **Container Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}\`
+        
+        ## Build Information
+        - **Commit**: ${{ github.sha }}
+        - **Build Date**: $(date -Iseconds)
+        - **Workflow**: ${{ github.workflow }}
+        
+        ## Usage
+        
+        ### Deploy to existing system:
+        \`\`\`bash
+        # Switch to this bootc container
+        sudo bootc switch ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        sudo systemctl reboot
+        \`\`\`
+        
+        ### Create disk image:
+        \`\`\`bash
+        # Build raw disk image
+        podman run --rm --privileged --pull=newer \\
+          --security-opt label=type:unconfined_t \\
+          -v ./output:/output \\
+          quay.io/centos-bootc/bootc-image-builder:latest \\
+          --type raw \\
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        \`\`\`
+        
+        ## Verification
+        \`\`\`bash
+        # Verify signature
+        cosign verify \\
+          --certificate-identity-regexp="https://github.com/${{ github.repository }}" \\
+          --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        \`\`\`
+        EOF
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          artifacts/*
+        body_path: RELEASE_NOTES.md

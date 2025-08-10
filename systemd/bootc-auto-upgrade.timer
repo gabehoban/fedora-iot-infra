@@ -1,0 +1,20 @@
+# Bootc Automatic Upgrade Timer
+[Unit]
+Description=Run bootc upgrade check periodically
+Requires=bootc-auto-upgrade.service
+
+[Timer]
+# Check every 6 hours
+OnCalendar=*-*-* 00,06,12,18:00:00
+
+# Run immediately if system was powered off during scheduled time
+Persistent=true
+
+# Add random delay to avoid thundering herd
+RandomizedDelaySec=1800
+
+# Don't run if on battery (for laptops/mobile devices)
+ConditionACPower=true
+
+[Install]
+WantedBy=timers.target

@@ -1,7 +1,12 @@
 *
 !/.github/
 !/.github/workflows/
-!/.github/workflows/build-and-sign-image.yml
+!/.github/workflows/bootc-build.yml
 !/.gitignore
-!/fedora-iot-infra.toml
+!/Containerfile
 !/README.md
+!/systemd/
+!/systemd/*.service
+!/systemd/*.timer
+!/scripts/
+!/scripts/bootc-auto-upgrade

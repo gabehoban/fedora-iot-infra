@@ -1,0 +1,15 @@
+# Bootc Automatic Upgrade Service
+[Unit]
+Description=Bootc automatic upgrade
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bootc-auto-upgrade
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
