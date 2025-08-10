@@ -166,67 +166,107 @@ jobs:
         echo "  gh attestation verify oci://ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }} --repo ${{ github.repository }}"
 
 
-  create-release:
+  update-readme:
     needs: [build, sign-image, verify-image]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
       with:
-        name: build-metadata-${{ github.run_id }}
-        path: artifacts/
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Create release summary
+    - name: Update README with latest image details
       run: |
-        cat > RELEASE_NOTES.md << EOF
+        # Update README.md with the latest image information
+        cat > README.md << 'EOF'
         # Fedora IoT GPS HAT Bootc Container
         
-        **Container Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}\`
+        Fedora IoT bootc container with support for GPS HAT (u-blox M8 GPS + RV-3028-C7 RTC) on Raspberry Pi.
         
-        ## Build Information
-        - **Commit**: ${{ github.sha }}
-        - **Build Date**: $(date -Iseconds)
-        - **Workflow**: ${{ github.workflow }}
+        ## Latest Image
         
-        ## Usage
+        **Container**: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main`
         
-        ### Deploy to existing system:
-        \`\`\`bash
+        **Digest**: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}`
+        
+        **Last Updated**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        
+        ## Quick Start
+        
+        ### Deploy to existing Fedora IoT system:
+        
+        ```bash
         # Switch to this bootc container
+        sudo bootc switch ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+        sudo systemctl reboot
+        ```
+        
+        ### Or use the specific digest:
+        
+        ```bash
         sudo bootc switch ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
         sudo systemctl reboot
-        \`\`\`
+        ```
         
-        ### Create disk image:
-        \`\`\`bash
-        # Build raw disk image
-        podman run --rm --privileged --pull=newer \\
-          --security-opt label=type:unconfined_t \\
-          -v ./output:/output \\
-          quay.io/centos-bootc/bootc-image-builder:latest \\
-          --type raw \\
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
-        \`\`\`
+        ## Features
+        
+        - u-blox M8 GPS support (UART, I2C)
+        - RV-3028-C7 RTC support
+        - PPS (Pulse Per Second) support for precise timing
+        - Automatic bootc updates via systemd timer
+        - Pre-configured gpsd and chrony for time synchronization
+        - Fedora IoT base with IoT-specific packages
+        
+        ## Hardware Configuration
+        
+        - **GPS**: u-blox M8 on I2C address 0x42, UART at 115200 baud
+        - **RTC**: RV-3028-C7 on I2C address 0x52
+        - **PPS**: GPIO pin for precise timing
+        
+        ## Default User
+        
+        - Username: `iot`
+        - Groups: `wheel`, `dialout`, `i2c`
+        - SSH keys should be added during initial deployment
+        
+        ## Automatic Updates
+        
+        The container includes automatic update checking every 6 hours with scheduled reboots at 3 AM if updates are available.
+        
+        ## Build Status
+        
+        ![Build Status](https://github.com/${{ github.repository }}/actions/workflows/bootc-build.yml/badge.svg)
         
         ## Verification
-        \`\`\`bash
-        # Verify signature
-        cosign verify \\
-          --certificate-identity-regexp="https://github.com/${{ github.repository }}" \\
-          --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+        
+        Verify container signatures:
+        
+        ```bash
+        cosign verify \
+          --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+          --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
-        \`\`\`
+        ```
+        
+        ## License
+        
+        This project follows Fedora licensing.
         EOF
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: |
-          artifacts/*
-        body_path: RELEASE_NOTES.md
+        
+    - name: Commit and push README updates
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        
+        if git diff --quiet README.md; then
+          echo "No changes to README.md"
+        else
+          git add README.md
+          git commit -m "chore: update README with latest image digest [skip ci]
+        
+        Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}
+        Build: ${{ github.run_id }}"
+          git push
+        fi
