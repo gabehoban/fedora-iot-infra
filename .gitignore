@@ -1,0 +1,7 @@
+*
+!/.github/
+!/.github/workflows/
+!/.github/workflows/build-and-sign-image.yml
+!/.gitignore
+!/fedora-iot-infra.toml
+!/README.md
