@@ -131,7 +131,7 @@ RUN cat > /lib/udev/hwclock-set << 'EOF'
 EOF
 RUN chmod +x /lib/udev/hwclock-set
 
-# Copy auto-upgrade configuration and scripts
+# Copy auto-upgrade scripts
 COPY systemd/ /etc/systemd/system/
 COPY scripts/bootc-auto-upgrade /usr/local/bin/bootc-auto-upgrade
 RUN chmod +x /usr/local/bin/bootc-auto-upgrade
@@ -141,8 +141,11 @@ RUN systemctl enable gpsd chronyd hwclock-sync.service gps-init.service && \
     systemctl enable bootc-auto-upgrade.timer && \
     systemctl disable fake-hwclock || true
 
-# Create core user with proper groups for hardware access
-RUN useradd -m -G wheel,dialout,i2c,tty -s /bin/bash core
+# Create hardware access groups and core user
+RUN groupadd -f dialout && \
+    groupadd -f i2c && \
+    groupadd -f tty && \
+    useradd -m -G wheel,dialout,i2c,tty -s /bin/bash core
 
 # Add container labels
 LABEL org.opencontainers.image.title="Fedora IoT GPS HAT" \
