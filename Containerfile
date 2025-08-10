@@ -141,12 +141,16 @@ RUN systemctl enable gpsd chronyd hwclock-sync.service gps-init.service && \
     systemctl enable bootc-auto-upgrade.timer && \
     systemctl disable fake-hwclock || true
 
-# Create hardware access groups and core user
-RUN groupadd -r -g 20 dialout || true && \
-    groupadd -r -g 997 i2c || true && \
-    groupadd -r -g 5 tty || true && \
+# Create core user and i2c group (dialout and tty already exist)
+RUN groupadd -r i2c || true && \
     useradd -m -G wheel -s /bin/bash core && \
-    usermod -a -G dialout,i2c,tty core
+    usermod -a -G dialout,tty core && \
+    (usermod -a -G i2c core || true) && \
+    mkdir -p /home/core/.ssh && \
+    echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCqFRwe/auSdigp5l+XmgIABl8rIIFuwBh9I2WNRpIfYKYJRyKkLbYZO3Z56lCxqjJkTUIIdw+hsUvR3A71HVRnRlx05pMQ9IMn6XSrx+AQVXs/hBFNijQsmCVUMebop2kW1WZUfIgMg4+5L9VQPL+pX6ARKuXSf8Gv2Qn+rInpY1rYE9DesezjzA2Cljr3Pii1JlmqYDDLS2HnZ10FhJfutqWPUR9RnX4HcVXKcxE9rgHzjGSyNkaFVX2HG8SafePyABacoajNQVORn7PHD9RLUeQ+qM8IIvAVxig2JPt36AnWjakSumwgyf/NjrbjJTMlacN3zqresfcsa3+HdGki86QRbZ2bNRurrBbevxxzgQggjW0506drw49sN/y78BGuYjZJjQW3C7TPHaLpPBKMIEFz64vuwATZiLpSb/mfGqXvpXb9Yl91qYbOy6GdXOO54EMb4zM6pQn1n3h6uaneJ/ZjM2GarbcGE5d/Nxw3AsS7gVUBAXrkbHdmJnXzoZWKO1DGjx7fGnHHvyKZN997BEzGpTMIRbF7g2S0RLVVjVYmLJNpCPGxkWACeJN+CXYof/Yl1adeCmQVLagtO8HwsBQLRO2CJwveUwnNRK3WVOOM8DK+u5ROgg1XJO7ngXnP3HKql6ju0kYRpwlRj/dZNrsJh7tYDgXr/9B8I/9Q4w== cardno:17_077_465" > /home/core/.ssh/authorized_keys && \
+    chown -R core:core /home/core/.ssh && \
+    chmod 700 /home/core/.ssh && \
+    chmod 600 /home/core/.ssh/authorized_keys
 
 # Add container labels
 LABEL org.opencontainers.image.title="Fedora IoT GPS HAT" \
