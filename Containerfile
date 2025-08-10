@@ -142,10 +142,11 @@ RUN systemctl enable gpsd chronyd hwclock-sync.service gps-init.service && \
     systemctl disable fake-hwclock || true
 
 # Create hardware access groups and core user
-RUN groupadd -f dialout && \
-    groupadd -f i2c && \
-    groupadd -f tty && \
-    useradd -m -G wheel,dialout,i2c,tty -s /bin/bash core
+RUN groupadd -r -g 20 dialout || true && \
+    groupadd -r -g 997 i2c || true && \
+    groupadd -r -g 5 tty || true && \
+    useradd -m -G wheel -s /bin/bash core && \
+    usermod -a -G dialout,i2c,tty core
 
 # Add container labels
 LABEL org.opencontainers.image.title="Fedora IoT GPS HAT" \
