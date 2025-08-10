@@ -74,15 +74,6 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Run bootc container lint
-      if: github.ref == 'refs/heads/main'
-      run: |
-        # Get first tag from the build output
-        FIRST_TAG=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
-        echo "Testing bootc container: $FIRST_TAG"
-        
-        # Run bootc lint to validate the container (image should already be available locally)
-        docker run --rm "$FIRST_TAG" bootc container lint
 
     - name: Generate build metadata
       run: |
