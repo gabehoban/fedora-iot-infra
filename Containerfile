@@ -132,7 +132,6 @@ EOF
 RUN chmod +x /lib/udev/hwclock-set
 
 # Copy auto-upgrade configuration and scripts
-COPY auto-upgrade-config.toml /etc/bootc/upgrade.conf
 COPY systemd/ /etc/systemd/system/
 COPY scripts/bootc-auto-upgrade /usr/local/bin/bootc-auto-upgrade
 RUN chmod +x /usr/local/bin/bootc-auto-upgrade
