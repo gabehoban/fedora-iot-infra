@@ -1,33 +1,30 @@
-# Multi-stage build for Fedora IoT bootc container following official docs
-FROM quay.io/fedora-testing/fedora-bootc:rawhide-standard AS builder
+# Fedora IoT bootc container with GPS HAT support
+# Using official Fedora bootc base - IoT packages will be layered on top
+FROM quay.io/fedora/fedora-bootc:42
 
-# Copy our customization files
-COPY systemd/ /tmp/systemd/
-COPY scripts/bootc-auto-upgrade /tmp/scripts/bootc-auto-upgrade
+# Install IoT and GPS/RTC packages
+RUN dnf install -y \
+    # Core IoT packages
+    zezere-ignition \
+    greenboot \
+    greenboot-default-health-checks \
+    # GPS/RTC packages
+    pps-tools \
+    minicom \
+    gpsd \
+    gpsd-clients \
+    chrony \
+    i2c-tools \
+    && dnf clean all
 
-# Create manifest with GPS/RTC packages and customizations
-RUN cat > /tmp/fedora-iot-gps.yaml << 'EOF'
-include: fedora-iot
-packages:
-  - pps-tools
-  - minicom
-  - gpsd
-  - gpsd-clients
-  - chrony
-  - i2c-tools
+# Copy systemd units and scripts
+COPY systemd/ /etc/systemd/system/
+COPY scripts/bootc-auto-upgrade /usr/local/bin/
+RUN chmod +x /usr/local/bin/bootc-auto-upgrade
 
-postprocess-script: |
-  #!/bin/bash
-  set -xeuo pipefail
-  
-  # Install systemd units and scripts
-  cp -r /tmp/systemd/* /target-rootfs/etc/systemd/system/
-  cp /tmp/scripts/bootc-auto-upgrade /target-rootfs/usr/local/bin/
-  chmod +x /target-rootfs/usr/local/bin/bootc-auto-upgrade
-
-  # Configure kernel modules
-  mkdir -p /target-rootfs/etc/modules-load.d
-  cat > /target-rootfs/etc/modules-load.d/gps-rtc.conf << 'MODULES'
+# Configure kernel modules
+RUN mkdir -p /etc/modules-load.d && \
+    cat > /etc/modules-load.d/gps-rtc.conf << 'EOF'
 # I2C modules
 i2c-dev
 i2c-bcm2835
@@ -37,11 +34,11 @@ rtc-rv3028
 
 # PPS module
 pps-gpio
-MODULES
+EOF
 
-  # Configure device tree overlays
-  mkdir -p /target-rootfs/boot/firmware/config.txt.d
-  cat > /target-rootfs/boot/firmware/config.txt.d/10-gps-rtc.conf << 'DT'
+# Configure device tree overlays
+RUN mkdir -p /boot/firmware/config.txt.d && \
+    cat > /boot/firmware/config.txt.d/10-gps-rtc.conf << 'EOF'
 # Enable I2C
 dtparam=i2c_arm=on
 
@@ -55,18 +52,26 @@ dtoverlay=pps-gpio
 # Serial configuration for GPS
 enable_uart=1
 dtparam=uart=on
-DT
+EOF
 
-  # Add i2c group for hardware access (iot user already exists in fedora-iot)
-  mkdir -p /target-rootfs/etc/sysusers.d
-  cat > /target-rootfs/etc/sysusers.d/iot-hardware.conf << 'SYSUSERS'
-# Hardware access for Fedora IoT GPS HAT
+# Create iot user and hardware access groups
+RUN mkdir -p /etc/sysusers.d && \
+    cat > /etc/sysusers.d/iot-hardware.conf << 'EOF'
+# Fedora IoT default user and hardware access groups
+u iot 1000 "Fedora IoT User" /home/iot /bin/bash
+g wheel - -
+g dialout - -
 g i2c - -
+m iot wheel
+m iot dialout
 m iot i2c
-SYSUSERS
+EOF
 
-  # Additional hardware configurations
-  cat > /target-rootfs/etc/systemd/system/hwclock-sync.service << 'HWCLOCK'
+# Configure sudo access for iot user
+RUN echo "iot ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/iot-user
+
+# Hardware clock sync service
+RUN cat > /etc/systemd/system/hwclock-sync.service << 'EOF'
 [Unit]
 Description=Sync system time with hardware clock
 After=systemd-modules-load.service
@@ -81,10 +86,10 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
-HWCLOCK
+EOF
 
-  # GPS init service
-  cat > /target-rootfs/etc/systemd/system/gps-init.service << 'GPSINIT'
+# GPS init service
+RUN cat > /etc/systemd/system/gps-init.service << 'EOF'
 [Unit]
 Description=GPS HAT Initialization
 After=systemd-modules-load.service
@@ -98,10 +103,10 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
-GPSINIT
+EOF
 
-  # Create hardware configuration files
-  cat > /target-rootfs/etc/udev/rules.d/99-gps-rtc.rules << 'UDEV'
+# Create hardware configuration files
+RUN cat > /etc/udev/rules.d/99-gps-rtc.rules << 'EOF'
 # GPS HAT RTC device
 KERNEL=="rtc0", SUBSYSTEM=="rtc", ATTRS{name}=="rv3028", SYMLINK+="rtc-gps"
 
@@ -110,19 +115,19 @@ KERNEL=="ttyS0", SUBSYSTEM=="tty", SYMLINK+="gps0", MODE="0666"
 
 # PPS device
 KERNEL=="pps0", SUBSYSTEM=="pps", SYMLINK+="pps-gps", MODE="0666"
-UDEV
+EOF
 
-  # Configure gpsd
-  mkdir -p /target-rootfs/etc/gpsd
-  cat > /target-rootfs/etc/gpsd/gpsd.conf << 'GPSD'
+# Configure gpsd
+RUN mkdir -p /etc/gpsd && \
+    cat > /etc/gpsd/gpsd.conf << 'EOF'
 # Configuration for gpsd
 DEVICES="/dev/ttyS0"
 GPSD_OPTIONS="-n -G"
 USBAUTO="false"
-GPSD
+EOF
 
-  # Configure chrony for GPS/RTC synchronization
-  cat > /target-rootfs/etc/chrony.conf << 'CHRONY'
+# Configure chrony for GPS/RTC synchronization
+RUN cat > /etc/chrony.conf << 'EOF'
 # Chrony configuration for GPS/RTC synchronization
 pool 2.fedora.pool.ntp.org iburst
 
@@ -137,10 +142,10 @@ rtcsync
 driftfile /var/lib/chrony/drift
 makestep 1.0 3
 rtconutc
-CHRONY
+EOF
 
-  # Customize hwclock-set for RTC support
-  cat > /target-rootfs/lib/udev/hwclock-set << 'HWCLOCKSET'
+# Customize hwclock-set for RTC support
+RUN cat > /lib/udev/hwclock-set << 'EOF'
 #!/bin/sh
 # Customized hwclock-set for RTC hardware support
 # Commented out systemd check to allow hardware RTC
@@ -150,24 +155,16 @@ CHRONY
 
 # Commented out to allow hardware RTC to work properly
 # /sbin/hwclock --rtc=$dev --systz
-HWCLOCKSET
-  chmod +x /target-rootfs/lib/udev/hwclock-set
-
-  # Configure services
-  systemctl --root=/target-rootfs enable gpsd chronyd hwclock-sync.service gps-init.service bootc-auto-upgrade.timer
-  systemctl --root=/target-rootfs disable fake-hwclock || true
 EOF
+RUN chmod +x /lib/udev/hwclock-set
 
-# Build the rootfs using the official bootc builder
-RUN /usr/libexec/bootc-base-imagectl build-rootfs --manifest=/tmp/fedora-iot-gps.yaml /target-rootfs
+# Enable services
+RUN systemctl enable gpsd chronyd hwclock-sync.service gps-init.service bootc-auto-upgrade.timer && \
+    systemctl disable fake-hwclock || true
 
-# Final stage: Create the bootc container
-FROM scratch
-COPY --from=builder /target-rootfs/ /
-
-# Essential bootc labels and configuration following official docs
-LABEL containers.bootc 1
-LABEL org.opencontainers.image.title="Fedora IoT GPS HAT" \
+# Essential bootc labels and configuration
+LABEL containers.bootc=1 \
+      org.opencontainers.image.title="Fedora IoT GPS HAT" \
       org.opencontainers.image.description="Fedora IoT 42 with GPS HAT (u-blox M8 + RV-3028-C7 RTC) support" \
       org.opencontainers.image.vendor="Fedora Project"
 
