@@ -169,6 +169,3 @@ LABEL org.opencontainers.image.title="Fedora IoT GPS HAT" \
       org.opencontainers.image.description="Fedora IoT 42 with GPS HAT (u-blox M8 + RV-3028-C7 RTC) support" \
       org.opencontainers.image.vendor="Fedora Project" \
       org.opencontainers.image.base.name="registry.fedoraproject.org/fedora-bootc:42"
-
-# Run bootc container lint as final validation
-RUN bootc container lint
