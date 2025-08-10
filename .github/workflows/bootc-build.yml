@@ -19,7 +19,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}/fedora-iot-infra
 
 permissions:
-  contents: read
+  contents: write  # Changed from read to write for README updates
   packages: write
   id-token: write
   attestations: write
