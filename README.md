@@ -6,7 +6,7 @@ Fedora IoT bootc container with support for GPS HAT (u-blox M8 GPS + RV-3028-C7 
 
 **Container**: `ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra:main`
 
-**Digest**: `ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4af402d8c25269f066f57a46b7747e1b10baa4d19ca035bd8de42a7b52d2a12d`
+**Digest**: `ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4b3209bad6376679379f937a710e7d8543e0770098ed8e4701a90c130e7ac838`
 
 **Last Updated**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
@@ -23,7 +23,7 @@ sudo systemctl reboot
 ### Or use the specific digest:
 
 ```bash
-sudo bootc switch ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4af402d8c25269f066f57a46b7747e1b10baa4d19ca035bd8de42a7b52d2a12d
+sudo bootc switch ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4b3209bad6376679379f937a710e7d8543e0770098ed8e4701a90c130e7ac838
 sudo systemctl reboot
 ```
 
@@ -64,7 +64,7 @@ Verify container signatures:
 cosign verify \
   --certificate-identity-regexp="https://github.com/gabehoban/fedora-iot-infra" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4af402d8c25269f066f57a46b7747e1b10baa4d19ca035bd8de42a7b52d2a12d
+  ghcr.io/gabehoban/fedora-iot-infra/fedora-iot-infra@sha256:4b3209bad6376679379f937a710e7d8543e0770098ed8e4701a90c130e7ac838
 ```
 
 ## License
